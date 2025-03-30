@@ -1,1 +1,143 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>포즈로 보는 오늘의 운세</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; background-color: #f4f4f4; }
+    h1 { margin-top: 30px; }
+    #label-container { font-size: 1.5em; margin-top: 20px; }
+    canvas { margin-top: 20px; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <h1>📸 포즈로 보는 오늘의 운세 🔮</h1>
+  <button onclick="init()">Start</button>
+  <div><canvas id="canvas"></canvas></div>
+  <div id="label-container">운세가 여기에 표시됩니다!</div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
+  <script type="text/javascript">
+    const URL = "./";
+    let model, webcam, ctx, labelContainer, maxPredictions;
+
+    const fortune_dict = {
+      "confident_pose":[
+          "오늘은 어떤 도전도 거뜬히 해낼 수 있는 날!!",
+          "오늘은 네가 주인공인 날이야! 주목 받을 준비됐어?",
+          "오늘 하루는 어디서든 네가 중심인 하루가 될거야",
+          "네가 선택한 길이 곧 정답인 날이야!",
+          "오늘 하루 걱정없이 앞으로 나아가기만 하면 돼!",
+          "무언가 새로운 시도를 해보기에 완벽한 날이야!",
+          "오늘 하루는 자신감 덕분에 일이 쉽게 풀릴거야!",
+          "오늘은 안일한 태도로 상대에게 상처를 줄 가능성이 조금 있으니 조심하는게 좋아 파이팅!!",
+          "주변에서 너를 보고 용기를 얻을 수 있는, 네가 너의 주변 사람들의 원동력이 될 수 있는 날이야!",
+          "오늘 하루는 완벽해! 오늘 하루만큼은 주변 사람들을 배려하고 챙겨보는건 어떨까?",
+          "조금은 진중할 필요가 있는 날이야! 언행에 항상 주의해!"
+      ],
+      "shy_pose":[
+          "걱정이 있는건 아니지?! 걱정이 많을때는 숨을 크게 쉬어봐 조급해하지 않아도 돼",
+          "오늘 하루동안 작은 용기를 내면 분명 좋은 일이 생길거야!",
+          "오늘은 무리하지 말고 마음가는 대로 해도 좋아!",
+          "네 마음을 솔직하게 표현하면 더 좋은 결과가 있을거야",
+          "사람들의 시선보다 너 자신을 더 신경써보는건 어때?",
+          "지금 고민하는 문제도 결국 해결 될거야",
+          "오늘은 스스로를 아껴줘야하는 날이야",
+          "너무 걱정하지 않아도 돼 이미 잘하고 있어 넌 완벽해",
+          "네 안의 힘을 믿어 봐 너는 상상 그 이상의 사람이야!",
+          "오늘 하루 나를 위한 작은 응원을 보내보는 건 어때?",
+          "오늘은 용기있는 결정을 하면 너의 행동에 행운이 따를거야!"
+      ],
+      "normal_pose":[
+          "오늘 하루는 잔잔한 호수처럼 무난하게 지나갈거야",
+          "평범한 일상 속에서도 소소한 기쁨이 있는 날이야",
+          "오늘은 계획대로 척척! 진행될거야",
+          "오늘은 너가 하고 싶은대로 해봐! 네 모습이 가장 좋아!",
+          "어제와 비슷한 하루라도 오늘만의 특별한 행운이 찾아올거야",
+          "새로운 도전을 해봐도 좋아!",
+          "오늘 하루는 언젠가 소중한 기억이 될 수 있는 날이야!",
+          "오늘은 너의 페이스대로!!",
+          "도움이 필요해 보이는 사람에게 친절을 베풀어도 좋아.",
+          "오늘은 평범함 속에서 행복을 찾아보는건 어때?",
+          "오늘 마주치는 사람들 중 귀인이 있을 수도 있어!"
+      ],
+      "tired_pose":[
+          "힘든 일이라도 있었어? 쉬어가는 날도 필요해",
+          "무리하지 말고 천천히 가도 괜찮아", 
+          "오늘 하루는 지친 너를 다시 뛸 수 있게 해줄 추진력이 될거야 파이팅!",
+          "난 널 믿어 우린 널 믿어 넌 뭐든지 할 수 있어!!",
+          "오늘은 마음이 가는 대로 행동해도 좋아",
+          "스스로에게 집중하기 어렵다면 타인에게 집중해봐!",
+          "지치고 우울할때는 샤워도 좋아!",
+          "너는 존재만으로도 가치있는 사람이야 그거면 충분해",
+          "수고했어 고마워 사랑해 💛",
+          "충분히 잘하고 있어! 오늘 하루정도는 가볍게 보내도 좋아",
+          "머리가 복잡하다면 취미생활로 힐링해봐!"
+      ],
+      "appearance_pose":[
+          "오늘은 너의 모습을 뽐낼수 있는 날이야!",
+          "네가 원하는 스타일이 완벽하게 어울리는 하루가 될거야!",
+          "신경 쓴만큼 결과도 만족스러울거야! 파이팅!!",
+          "작은변화가 큰 자신감과 기쁨을 줄 거야",
+          "연애운이 있어! 인연이 바로 옆에 있을 수도..??",
+          "오늘은 외모뿐만 아니라 내면까지 빛날 수 있는 하루야!",
+          "사진찍기 좋은 날! 아름다움을 담아봐~~",
+          "스스로를 가꾸는 모습이 멋져 오늘도 자신감 넘치게!",
+          "오늘은 멋진 하루가 될거야 행복한 하루되길!",
+          "오늘은 SNS에 사진 올리기 좋은 날!",
+          "넌 충분히 아름다워 오늘은 내면을 더 아름답게!"
+      ]
+    };
+
+    async function init() {
+      const modelURL = URL + "model.json";
+      const metadataURL = URL + "metadata.json";
+
+      model = await tmPose.load(modelURL, metadataURL);
+      maxPredictions = model.getTotalClasses();
+
+      const size = 400;
+      const flip = true;
+      webcam = new tmPose.Webcam(size, size, flip);
+      await webcam.setup();
+      await webcam.play();
+      window.requestAnimationFrame(loop);
+
+      document.getElementById("canvas").width = size;
+      document.getElementById("canvas").height = size;
+      ctx = document.getElementById("canvas").getContext("2d");
+      labelContainer = document.getElementById("label-container");
+    }
+
+    async function loop() {
+      webcam.update();
+      await predict();
+      window.requestAnimationFrame(loop);
+    }
+
+    async function predict() {
+      const { pose, posenetOutput } = await model.estimatePose(webcam.canvas);
+      const prediction = await model.predict(posenetOutput);
+
+      ctx.drawImage(webcam.canvas, 0, 0);
+
+      let topLabel = "";
+      let topProb = 0;
+
+      for (let i = 0; i < maxPredictions; i++) {
+        if (prediction[i].probability > topProb) {
+          topProb = prediction[i].probability;
+          topLabel = prediction[i].className;
+        }
+      }
+
+      if (topProb > 0.90 && fortune_dict[topLabel]) {
+        const randomFortune = fortune_dict[topLabel][Math.floor(Math.random() * fortune_dict[topLabel].length)];
+        labelContainer.innerHTML = `<b>${topLabel}</b><br>${randomFortune}`;
+      }
+    }
+  </script>
+</body>
+</html>
 
